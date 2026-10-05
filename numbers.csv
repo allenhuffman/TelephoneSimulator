@@ -1,0 +1,18 @@
+# number,description
+# Audio file is audio/<number>.mp3, with the number written exactly as here (e.g. audio/030-263.mp3).
+# Dialed digits ignore non-digits, so 030-263 is dialed as 030263.
+030-245,Cinema Vision Optics
+030-263,(030-BND) Rick's Bail Bonds
+030-278,(030-CRT) Interdimension Television Tech Support
+030-295,Jally Corp
+030-667,(030-MOP) Jenn and Eric's Janitorial Services
+030-728,(030-RAT) Hugh Manrat
+030-744,(030-PIG) Spiggs BBQ
+030-778,(030-RST) Rusty's Junkyard and Scrap
+101-263,The Wrong Person
+314-441,Melissa Hartwell
+468-663,Facade Hotline
+553-456,(55-FILM) Reel Line
+710-771,Agent Communications Observed
+772-767,Splice Bros. Pizza
+8000,Manager's Office Voicemail

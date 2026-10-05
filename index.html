@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telephone Simulator</title>
+  <link rel="stylesheet" href="style.css?v=10">
+</head>
+<body>
+  <main class="phone">
+    <div id="display" class="display" aria-live="polite">&nbsp;</div>
+    <div id="status" class="status">Pick up the receiver</div>
+
+    <div class="keypad" id="keypad">
+      <button data-key="1">1</button>
+      <button data-key="2">2<small>ABC</small></button>
+      <button data-key="3">3<small>DEF</small></button>
+      <button data-key="4">4<small>GHI</small></button>
+      <button data-key="5">5<small>JKL</small></button>
+      <button data-key="6">6<small>MNO</small></button>
+      <button data-key="7">7<small>PQRS</small></button>
+      <button data-key="8">8<small>TUV</small></button>
+      <button data-key="9">9<small>WXYZ</small></button>
+      <button data-key="*">*</button>
+      <button data-key="0">0</button>
+      <button data-key="#">#</button>
+    </div>
+
+    <div class="actions">
+      <button id="pickup" class="pickup">Pick up</button>
+      <button id="hangup" class="hangup">Hang up</button>
+    </div>
+  </main>
+  <div id="version" class="version">page v10</div>
+  <script src="app.js?v=10"></script>
+</body>
+</html>
