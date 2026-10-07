@@ -1,7 +1,7 @@
 "use strict";
 
 // Bump together with the ?v= on the script tag and the page label in index.html.
-const VERSION = 10;
+const VERSION = 15;
 
 const AUDIO_DIR = "audio/";
 const SYSTEM_DIR = "audio/system/";
@@ -13,6 +13,8 @@ const IDLE_TIMEOUT_MS = 5000;
 const DIAL_TONE_TIMEOUT_MS = 15000;
 // Longest number on the system; an unknown number is only rejected once this many digits are dialed.
 const MAX_DIGITS = 6;
+// Cheat mode reveals the secrets: the selected phone's number and the description of the number being called.
+const CHEAT_MODE = false;
 
 const DTMF = {
   "1": [697, 1209], "2": [697, 1336], "3": [697, 1477],
@@ -33,8 +35,11 @@ const DIAL_TONE_MS = 30000;
 
 const displayEl = document.getElementById("display");
 const statusEl = document.getElementById("status");
+const phoneSelectEl = document.getElementById("phone");
 
 let numbers = new Map(); // digits -> { desc, file }
+let phones = [];
+let selectedPhone = null;
 let buffer = "";
 let dialTimer = null;
 let dialed = false; // true once the buffer has been dialed; next digit starts a new number
@@ -92,18 +97,18 @@ function stopAudio() {
   }
 }
 
-function playFile(url, { onError, onEnd, loop } = {}) {
+function playFile(url, { onError, onEnd, loop, logError = true } = {}) {
   stopAudio();
   const a = new Audio(url);
   a.loop = !!loop;
   player = a;
   a.onended = () => { if (player === a) { player = null; onEnd && onEnd(); } };
   a.onerror = () => {
-    console.error("Audio failed:", url, a.error);
+    if (logError) console.error("Audio failed:", url, a.error);
     if (player === a) { player = null; onError && onError(); }
   };
   a.play().catch((err) => {
-    console.error("Audio play() rejected:", url, err);
+    if (logError) console.error("Audio play() rejected:", url, err);
     a.onerror && a.onerror();
   });
 }
@@ -136,6 +141,28 @@ function parseCsv(text) {
   return map;
 }
 
+function parsePhonesCsv(text) {
+  const loadedPhones = [];
+  const numbers = new Set();
+  for (const [index, raw] of text.split(/\r?\n/).entries()) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const i = line.indexOf(",");
+    if (i < 0) throw new Error(`Missing comma on line ${index + 1}`);
+
+    const rawNumber = line.slice(0, i).trim();
+    const name = line.slice(i + 1).trim();
+    const number = rawNumber.replace(/\D/g, "");
+    if (!name) throw new Error(`Missing phone name on line ${index + 1}`);
+    if (rawNumber && !number) throw new Error(`Invalid phone number on line ${index + 1}`);
+    if (number && numbers.has(number)) throw new Error(`Duplicate phone number on line ${index + 1}`);
+    if (number) numbers.add(number);
+    loadedPhones.push({ number, name, label: number ? `${name} (${rawNumber})` : name });
+  }
+  if (!loadedPhones.length) throw new Error("No phones found");
+  return loadedPhones;
+}
+
 async function loadNumbers() {
   try {
     const res = await fetch("numbers.csv", { cache: "no-cache" });
@@ -147,8 +174,34 @@ async function loadNumbers() {
   }
 }
 
+async function loadPhones() {
+  try {
+    const res = await fetch("phones.csv", { cache: "no-cache" });
+    if (!res.ok) throw new Error(res.status);
+    phones = parsePhonesCsv(await res.text());
+    phoneSelectEl.replaceChildren(...phones.map((phone, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = CHEAT_MODE ? phone.label : phone.name;
+      return option;
+    }));
+    selectedPhone = phones[0];
+    phoneSelectEl.disabled = offHook;
+    console.log("Loaded phones:", phones.map((phone) => phone.name).join(", "));
+  } catch (e) {
+    console.error("Could not load phones.csv:", e);
+    setStatus("Could not load phones.csv (serve over http, not file://)");
+  }
+}
+
+function isOwnNumber(digits) {
+  return !!selectedPhone?.number && digits === selectedPhone.number;
+}
+
 function hasLongerMatch(digits) {
   for (const n of numbers.keys()) if (n.length > digits.length && n.startsWith(digits)) return true;
+  const ownNumber = selectedPhone?.number;
+  if (ownNumber && ownNumber.length > digits.length && ownNumber.startsWith(digits)) return true;
   return false;
 }
 
@@ -157,17 +210,31 @@ function dial() {
   if (!buffer) return;
   dialed = true;
   const digits = buffer;
+  if (isOwnNumber(digits)) {
+    console.log("Dial own number", digits);
+    playSystem("busy", "Line busy");
+    return;
+  }
   console.log("Dial", digits, numbers.has(digits) ? numbers.get(digits).file : "not in numbers.csv");
   if (!numbers.has(digits)) {
     playSystem("invalid", "Call cannot be completed as dialed");
     return;
   }
   const entry = numbers.get(digits);
-  setStatus("Calling " + (entry.desc || digits) + "...");
-  playFile(AUDIO_DIR + encodeURIComponent(entry.file), {
+  setStatus(CHEAT_MODE ? "Calling " + (entry.desc || digits) + "..." : "Calling...");
+  const sharedRecording = () => playFile(AUDIO_DIR + encodeURIComponent(entry.file), {
     onError: () => playSystem("invalid", "Call cannot be completed as dialed"),
     onEnd: () => setStatus("Call ended"),
   });
+  if (selectedPhone?.number) {
+    playFile(AUDIO_DIR + selectedPhone.number + "/" + encodeURIComponent(entry.file), {
+      logError: false,
+      onError: sharedRecording,
+      onEnd: () => setStatus("Call ended"),
+    });
+  } else {
+    sharedRecording();
+  }
 }
 
 function pressKey(key) {
@@ -182,11 +249,12 @@ function pressKey(key) {
   displayEl.textContent = format(buffer);
   setStatus("Dialing...");
 
-  if (numbers.has(buffer) && !hasLongerMatch(buffer)) {
+  const isDialable = numbers.has(buffer) || isOwnNumber(buffer);
+  if (isDialable && !hasLongerMatch(buffer)) {
     dialTimer = setTimeout(dial, 400);
   } else if (buffer.length >= MAX_DIGITS) {
     dialTimer = setTimeout(dial, 400);
-  } else if (numbers.has(buffer)) {
+  } else if (isDialable) {
     dialTimer = setTimeout(dial, DIAL_TIMEOUT_MS);
   } else {
     dialTimer = setTimeout(dial, IDLE_TIMEOUT_MS);
@@ -195,7 +263,9 @@ function pressKey(key) {
 
 function pickUp() {
   if (offHook) return;
+  selectedPhone = phones[Number(phoneSelectEl.value)] || selectedPhone;
   offHook = true;
+  phoneSelectEl.disabled = true;
   buffer = "";
   dialed = false;
   displayEl.textContent = format(buffer);
@@ -214,6 +284,7 @@ function hangUp() {
   clearTimeout(dialTimer);
   stopAudio();
   offHook = false;
+  phoneSelectEl.disabled = false;
   buffer = "";
   dialed = false;
   displayEl.textContent = format(buffer);
@@ -226,13 +297,20 @@ document.getElementById("keypad").addEventListener("click", (e) => {
 });
 document.getElementById("pickup").addEventListener("click", pickUp);
 document.getElementById("hangup").addEventListener("click", hangUp);
+phoneSelectEl.addEventListener("change", () => {
+  selectedPhone = phones[Number(phoneSelectEl.value)] || null;
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target === phoneSelectEl && e.key !== "Enter") return;
   let key = null;
   if (/^[0-9*#]$/.test(e.key)) key = e.key;
-  else if (e.key === "Enter") return pickUp();
-  else if (e.key === "Escape") return hangUp();
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    if (e.repeat) return;
+    return offHook ? hangUp() : pickUp();
+  }
   if (!key || e.repeat) return;
   const btn = document.querySelector(`button[data-key="${CSS.escape(key)}"]`);
   btn.classList.add("active");
@@ -241,5 +319,6 @@ document.addEventListener("keydown", (e) => {
 });
 
 loadNumbers();
+loadPhones();
 setStatus("Pick up the receiver");
 document.getElementById("version").textContent += " / script v" + VERSION;

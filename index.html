@@ -4,10 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Telephone Simulator</title>
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
   <main class="phone">
+    <div class="phone-selector">
+      <label for="phone">Phone</label>
+      <select id="phone" disabled>
+        <option>Loading phones...</option>
+      </select>
+    </div>
     <div id="display" class="display" aria-live="polite">&nbsp;</div>
     <div id="status" class="status">Pick up the receiver</div>
 
@@ -31,7 +37,7 @@
       <button id="hangup" class="hangup">Hang up</button>
     </div>
   </main>
-  <div id="version" class="version">page v10</div>
-  <script src="app.js?v=10"></script>
+  <div id="version" class="version">page v15</div>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

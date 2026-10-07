@@ -32,6 +32,19 @@ body {
   border-radius: calc(var(--radius) * 1.5);
 }
 
+.phone-selector { margin-bottom: 16px; }
+.phone-selector label { display: block; margin-bottom: 6px; font-size: 0.9rem; }
+.phone-selector select {
+  width: 100%;
+  padding: 10px;
+  color: var(--text);
+  background: var(--key);
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+}
+.phone-selector select:disabled { opacity: 0.6; }
+
 .display {
   min-height: 3rem;
   padding: 10px 14px;
