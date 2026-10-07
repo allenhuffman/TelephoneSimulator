@@ -1,7 +1,7 @@
 "use strict";
 
 // Bump together with the ?v= on the script tag and the page label in index.html.
-const VERSION = 15;
+const VERSION = 17;
 
 const AUDIO_DIR = "audio/";
 const SYSTEM_DIR = "audio/system/";
@@ -49,11 +49,12 @@ const toneUrls = new Map();
 
 // Tones are rendered to WAV and played as <audio>, the same path as the mp3s, which Safari allows reliably.
 // Whole-second lengths hold a whole number of cycles for integer Hz, so loopable tones have no seam.
-function toneUrl(freqs, ms, loopable = false) {
-  const key = freqs.join("+") + "@" + ms + (loopable ? "L" : "");
+function toneUrl(freqs, ms, loopable = false, offMs = 0) {
+  const key = freqs.join("+") + "@" + ms + "+" + offMs + (loopable ? "L" : "");
   if (toneUrls.has(key)) return toneUrls.get(key);
   const rate = 22050;
-  const n = Math.floor(rate * ms / 1000);
+  const onSamples = Math.floor(rate * ms / 1000);
+  const n = Math.floor(rate * (ms + offMs) / 1000);
   const fade = loopable ? 0 : Math.floor(rate * 0.005);
   const buf = new ArrayBuffer(44 + n * 2);
   const v = new DataView(buf);
@@ -64,8 +65,10 @@ function toneUrl(freqs, ms, loopable = false) {
   v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, n * 2, true);
   for (let i = 0; i < n; i++) {
     let s = 0;
-    for (const f of freqs) s += Math.sin(2 * Math.PI * f * i / rate);
-    const env = fade ? Math.min(1, i / fade, (n - i) / fade) : 1;
+    if (i < onSamples) {
+      for (const f of freqs) s += Math.sin(2 * Math.PI * f * i / rate);
+    }
+    const env = fade ? Math.min(1, i / fade, (onSamples - i) / fade) : 1;
     v.setInt16(44 + i * 2, Math.round(s / freqs.length * env * 0.8 * 32767), true);
   }
   const url = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
@@ -118,6 +121,18 @@ function playSystem(name, label) {
   playFile(SYSTEM_DIR + name + ".mp3", {
     onError: () => playFallback(name),
     onEnd: () => setStatus("Dial a number"),
+  });
+}
+
+function playRingback() {
+  setStatus("Ringing...");
+  const playIndefiniteRingback = () => playFile(SYSTEM_DIR + "ring-reorder.mp3", {
+    loop: true,
+    onError: () => playFile(toneUrl([440, 480], 2000, true, 4000), { loop: true }),
+  });
+  playFile(SYSTEM_DIR + "noanswer.mp3", {
+    onError: playIndefiniteRingback,
+    onEnd: () => setStatus("No answer"),
   });
 }
 
@@ -200,8 +215,9 @@ function isOwnNumber(digits) {
 
 function hasLongerMatch(digits) {
   for (const n of numbers.keys()) if (n.length > digits.length && n.startsWith(digits)) return true;
-  const ownNumber = selectedPhone?.number;
-  if (ownNumber && ownNumber.length > digits.length && ownNumber.startsWith(digits)) return true;
+  for (const phone of phones) {
+    if (phone.number.length > digits.length && phone.number.startsWith(digits)) return true;
+  }
   return false;
 }
 
@@ -213,6 +229,12 @@ function dial() {
   if (isOwnNumber(digits)) {
     console.log("Dial own number", digits);
     playSystem("busy", "Line busy");
+    return;
+  }
+  const calledPhone = phones.find((phone) => phone.number === digits);
+  if (calledPhone) {
+    console.log("Call phone", calledPhone.name, digits);
+    playRingback();
     return;
   }
   console.log("Dial", digits, numbers.has(digits) ? numbers.get(digits).file : "not in numbers.csv");
@@ -249,7 +271,7 @@ function pressKey(key) {
   displayEl.textContent = format(buffer);
   setStatus("Dialing...");
 
-  const isDialable = numbers.has(buffer) || isOwnNumber(buffer);
+  const isDialable = numbers.has(buffer) || phones.some((phone) => phone.number === buffer);
   if (isDialable && !hasLongerMatch(buffer)) {
     dialTimer = setTimeout(dial, 400);
   } else if (buffer.length >= MAX_DIGITS) {
